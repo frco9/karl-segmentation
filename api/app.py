@@ -231,7 +231,7 @@ def create_app():
 
     msk = decode_labels(parsing_, num_classes=N_CLASSES)
     parsing_im = Image.fromarray(msk[0])
-    cv2.imwrite('{}/labels/{}'.format(OUTPUT_DIR, img_id), parsing_[0,:,:,0])
+    cv2.imwrite('{}/labels/{}.png'.format(OUTPUT_DIR, img_id.split('.')[0]), parsing_[0,:,:,0])
 
     coord.request_stop()
 
