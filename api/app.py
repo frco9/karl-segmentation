@@ -75,7 +75,7 @@ def create_app():
     return 'alive'
   
   
-  @app.route('/getSegementation', methods=['POST'])
+  @app.route('/getSegmentation', methods=['POST'])
   def get_segmentation():
     if 'file' not in request.files:
       return custom_response({ 'error': 'No file provided' }, 400)
