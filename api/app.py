@@ -1,9 +1,10 @@
 from __future__ import print_function
 #api/app.py
 import os
+import requests
 from flask import Flask, current_app, Response, json, jsonify, request
 from flask_cors import CORS
-
+import pandas as pd
 import argparse
 from datetime import datetime
 import os
@@ -24,11 +25,12 @@ N_CLASSES = 20
 INPUT_SIZE = (384, 384)
 DATA_DIRECTORY = './datasets/examples'
 DATA_LIST_PATH = './datasets/examples/list/val.txt'
-NUM_STEPS = 6 # Number of images in the validation set.
 RESTORE_FROM = './checkpoint/JPPNet-s2'
-OUTPUT_DIR = './output/parsing/val'
+OUTPUT_DIR = './output/dataset'
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
+    os.makedirs('{}/images'.format(OUTPUT_DIR))
+    os.makedirs('{}/labels'.format(OUTPUT_DIR))
 
 def create_app():
   """
@@ -38,13 +40,55 @@ def create_app():
 
   CORS(app, supports_credentials=True)
 
+  def custom_response(res, status_code):
+    """
+    Custom Response Function
+    """
+    return Response(
+      mimetype="application/json",
+      response=json.dumps(res),
+      status=status_code
+    )
+
+  def getBoundingBoxes(mask):
+    print(mask[0].shape)
+    image_bounds_dict = {}
+    for i, row in enumerate(mask[0]):
+      for j, elem in enumerate(row):
+        color_str = str(elem[0]) + '_' + str(elem[1]) + '_' + str(elem[2])
+        if color_str not in image_bounds_dict:
+          image_bounds_dict[color_str] = {'left': j, 'top': i, 'right': j, 'bottom': i}
+        else:
+          previous_left = image_bounds_dict[color_str]['left']
+          previous_right = image_bounds_dict[color_str]['right']
+          previous_top = image_bounds_dict[color_str]['top']
+          previous_bottom = image_bounds_dict[color_str]['bottom']
+
+          image_bounds_dict[color_str]['left'] = min(j, previous_left)
+          image_bounds_dict[color_str]['top'] = min(j, previous_top)
+          image_bounds_dict[color_str]['right'] = max(j, previous_right)
+          image_bounds_dict[color_str]['bottom'] = max(j, previous_bottom)
+    return image_bounds_dict
+
   @app.route('/', methods=['GET'])
   def index():
     return 'alive'
   
+  
   @app.route('/getSegementation', methods=['POST'])
   def get_segmentation():
-    req_data = request.get_json()
+    if 'file' not in request.files:
+      return custom_response({ 'error': 'No file provided' }, 400)
+    file = request.files['file']
+    # if user does not select file, browser also
+    # submit a empty part without filename
+    if file.filename == '':
+      return custom_response({ 'error': 'File without name forbidden' }, 400)
+   
+    img_contents = file.read()
+
+    with open('{}/images/{}'.format(OUTPUT_DIR, file.filename), "wb") as f:
+      f.write(img_contents)
 
     # Create queue coordinator.
     coord = tf.train.Coordinator()
@@ -52,9 +96,8 @@ def create_app():
     # Load reader.
     with tf.name_scope("create_inputs"):
         reader = ImageReader(DATA_DIRECTORY, DATA_LIST_PATH, None, False, False, coord)
-        image = reader.image
+        image = reader.read_images_from_binary(img_contents)
         image_rev = tf.reverse(image, tf.stack([1]))
-        image_list = reader.image_list
 
     image_batch_origin = tf.stack([image, image_rev])
     image_batch = tf.image.resize_images(image_batch_origin, [int(h), int(w)])
@@ -133,7 +176,7 @@ def create_app():
     raw_output_all = tf.expand_dims(raw_output_all, dim=0)
     raw_output_all = tf.argmax(raw_output_all, dimension=3)
     pred_all = tf.expand_dims(raw_output_all, dim=3) # Create 4-d tensor.
-
+    
     # Which variables to load.
     restore_var = tf.global_variables()
     # Set up tf session and initialize variables. 
@@ -152,29 +195,21 @@ def create_app():
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
-    
-    # Start queue threads.
-    threads = tf.train.start_queue_runners(coord=coord, sess=sess)
 
 
     # Iterate over training steps.
-    for step in range(NUM_STEPS):
-        parsing_ = sess.run(pred_all)
-        if step % 100 == 0:
-            print('step {:d}'.format(step))
-            print (image_list[step])
-        img_split = image_list[step].split('/')
-        img_id = img_split[-1][:-4]
+    parsing_ = sess.run(pred_all)
+    img_id = file.filename
 
-        msk = decode_labels(parsing_, num_classes=N_CLASSES)
-        parsing_im = Image.fromarray(msk[0])
-        parsing_im.save('{}/{}_vis.png'.format(OUTPUT_DIR, img_id))
-        cv2.imwrite('{}/{}.png'.format(OUTPUT_DIR, img_id), parsing_[0,:,:,0])
+    msk = decode_labels(parsing_, num_classes=N_CLASSES)
+    parsing_im = Image.fromarray(msk[0])
+    cv2.imwrite('{}/labels/{}'.format(OUTPUT_DIR, img_id), parsing_[0,:,:,0])
 
     coord.request_stop()
-    coord.join(threads)
 
-    return jsonify(req_data)
+    bbox = getBoundingBoxes(msk)
+
+    return custom_response({ 'bounding_boxes': bbox }, 200)
 
   
 

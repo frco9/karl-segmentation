@@ -140,11 +140,21 @@ class ImageReader(object):
         self.input_size = input_size
         self.coord = coord
 
-        self.image_list = read_labeled_image_list(self.data_dir, self.data_list)
-        self.images = tf.convert_to_tensor(self.image_list, dtype=tf.string)
-        self.queue = tf.train.slice_input_producer([self.images],
-                                                   shuffle=input_size is not None) # not shuffling if it is val
-        self.image = read_images_from_disk(self.queue, self.input_size, random_scale, random_mirror) 
+
+    
+    def read_images_from_binary(self, img_contents): # optional pre-processing arguments
+        """Read one image and its corresponding mask with optional pre-processing.
+
+        Returns:
+          Two tensors: the decoded image and its mask.
+        """        
+        img = tf.image.decode_jpeg(img_contents, channels=3, name="jpeg_reader")
+        img_r, img_g, img_b = tf.split(value=img, num_or_size_splits=3, axis=2)
+        img = tf.cast(tf.concat([img_b, img_g, img_r], 2), dtype=tf.float32)
+        # Extract mean.
+        img -= IMG_MEAN
+        return img
+
 
     def dequeue(self, num_elements):
         '''Pack images and labels into a batch.
