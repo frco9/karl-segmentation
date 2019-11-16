@@ -51,6 +51,34 @@ def create_app():
     )
 
   def getBoundingBoxes(mask):
+    image_bounds_dict = {}
+    for i, row in enumerate(mask[0]):
+      for j, elem in enumerate(row):
+        color_str = str(elem[0]) + '_' + str(elem[1]) + '_' + str(elem[2])
+
+        if color_str not in image_bounds_dict:
+          image_bounds_dict[color_str] = {
+              'left': j, 'top': i, 'right': j, 'bottom': i}
+        else:
+          previous_left = image_bounds_dict[color_str]['left']
+          previous_right = image_bounds_dict[color_str]['right']
+          previous_top = image_bounds_dict[color_str]['top']
+          previous_bottom = image_bounds_dict[color_str]['bottom']
+
+          image_bounds_dict[color_str]['left'] = min(j, previous_left)
+          image_bounds_dict[color_str]['top'] = min(i, previous_top)
+          image_bounds_dict[color_str]['right'] = max(j, previous_right)
+          image_bounds_dict[color_str]['bottom'] = max(i, previous_bottom)
+
+    data = []
+    for key, item in image_bounds_dict.items():
+      data.append({
+        'id': key,
+        'bounds': item
+      })
+    
+    return data
+
     print(mask[0].shape)
     image_bounds_dict = {}
     for i, row in enumerate(mask[0]):
@@ -209,7 +237,7 @@ def create_app():
 
     bbox = getBoundingBoxes(msk)
 
-    return custom_response({ 'bounding_boxes': bbox }, 200)
+    return custom_response(bbox, 200)
 
   
 
