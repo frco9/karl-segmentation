@@ -160,7 +160,7 @@ def create_app():
    
     img_contents = file.read()
 
-    with open('{}/images/{}'.format(OUTPUT_DIR, file.filename), "wb") as f:
+    with open('{}/images/{}.jpg'.format(OUTPUT_DIR, file.filename.split('.')[0]), "wb") as f:
       f.write(img_contents)
 
     # Create queue coordinator.
