@@ -13,6 +13,8 @@ import time
 import scipy.misc
 import cv2
 from PIL import Image
+import imageio
+
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 import tensorflow as tf
@@ -50,6 +52,69 @@ def create_app():
       status=status_code
     )
 
+  def convert_mask_lip(mask):
+    LIP_to_FP_dict = {
+      0: 0,
+      1: 1,
+      2: 2,
+      3: 0,
+      4: 3,
+      5: 4,
+      6: 7,
+      7: 4,
+      8: 0,
+      9: 6,
+      10: 7,
+      11: 17,
+      12: 5,
+      13: 11,
+      14: 14,
+      15: 15,
+      16: 12,
+      17: 13,
+      18: 9,
+      19: 10
+    }
+
+    LIP_rgb_to_code_dict = {
+      '0_0_0': 0,
+      '128_0_0': 1,
+      '255_0_0': 2,
+      '0_85_0': 3,
+      '170_0_51': 4,
+      '255_85_0': 5,
+      '0_0_85': 6,
+      '0_119_221': 7,
+      '85_85_0': 8,
+      '0_85_85': 9,
+      '85_51_0': 10,
+      '52_86_128': 11,
+      '0_128_0': 12,
+      '0_0_255': 13,
+      '51_170_221': 14,
+      '0_255_255': 15,
+      '85_255_170': 16,
+      '170_255_85': 17,
+      '255_255_0': 18,
+      '255_170_0': 19
+    }
+    image_bounds_dict = {}
+    new_matrix = []
+    for i, row in enumerate(mask):
+      new_row = []
+      for j, elem in enumerate(row):
+        new_col = []
+        color_str = str(elem[0]) + '_' + str(elem[1]) + '_' + str(elem[2])
+
+        LIP_code = LIP_rgb_to_code_dict[color_str]
+        FP_code = LIP_to_FP_dict[LIP_code]
+        FP_code = [FP_code]*3
+        new_row.append(FP_code)
+      new_matrix.append(new_row) 
+    new_matrix = np.array(new_matrix).astype(np.uint8)
+    return new_matrix
+        
+
   def getBoundingBoxes(mask):
     image_bounds_dict = {}
     for i, row in enumerate(mask[0]):
@@ -76,27 +141,7 @@ def create_app():
         'id': key,
         'bounds': item
       })
-    
     return data
-
-    print(mask[0].shape)
-    image_bounds_dict = {}
-    for i, row in enumerate(mask[0]):
-      for j, elem in enumerate(row):
-        color_str = str(elem[0]) + '_' + str(elem[1]) + '_' + str(elem[2])
-        if color_str not in image_bounds_dict:
-          image_bounds_dict[color_str] = {'left': j, 'top': i, 'right': j, 'bottom': i}
-        else:
-          previous_left = image_bounds_dict[color_str]['left']
-          previous_right = image_bounds_dict[color_str]['right']
-          previous_top = image_bounds_dict[color_str]['top']
-          previous_bottom = image_bounds_dict[color_str]['bottom']
-
-          image_bounds_dict[color_str]['left'] = min(j, previous_left)
-          image_bounds_dict[color_str]['top'] = min(j, previous_top)
-          image_bounds_dict[color_str]['right'] = max(j, previous_right)
-          image_bounds_dict[color_str]['bottom'] = max(j, previous_bottom)
-    return image_bounds_dict
 
   @app.route('/', methods=['GET'])
   def index():
@@ -230,8 +275,8 @@ def create_app():
     img_id = file.filename
 
     msk = decode_labels(parsing_, num_classes=N_CLASSES)
-    parsing_im = Image.fromarray(msk[0])
-    cv2.imwrite('{}/labels/{}.png'.format(OUTPUT_DIR, img_id.split('.')[0]), parsing_[0,:,:,0])
+    parsing_im = convert_mask_lip(msk[0])
+    imageio.imwrite('{}/labels/{}.png'.format(OUTPUT_DIR, img_id.split('.')[0]), parsing_im)
 
     coord.request_stop()
 
